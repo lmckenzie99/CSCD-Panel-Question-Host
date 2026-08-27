@@ -1,0 +1,4 @@
+api/config.php
+data/*.sqlite
+data/*.sqlite-journal
+.DS_Store

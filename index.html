@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CSCD Panel Q&amp;A</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="page-head">
+        <span class="kicker">Live panel</span>
+        <h1>Ask the panel a question</h1>
+        <p>
+          Your question goes to the moderator, who will read selected questions
+          aloud. Name is optional.
+        </p>
+      </header>
+
+      <p id="status" class="banner" hidden role="status"></p>
+
+      <form id="question-form">
+        <div class="field">
+          <label for="name">Name (optional)</label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            maxlength="100"
+            autocomplete="name"
+          />
+        </div>
+        <div class="field">
+          <label for="body">Question</label>
+          <textarea
+            id="body"
+            name="body"
+            required
+            maxlength="1000"
+            placeholder="What would you like the panel to discuss?"
+          ></textarea>
+          <p class="hint">Up to 1000 characters.</p>
+        </div>
+        <div class="actions">
+          <button type="submit" id="submit-btn">Send question</button>
+        </div>
+      </form>
+    </main>
+    <script src="js/submit.js"></script>
+  </body>
+</html>

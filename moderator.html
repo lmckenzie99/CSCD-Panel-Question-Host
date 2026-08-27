@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Moderator — CSCD Panel Q&amp;A</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body class="moderator">
+    <main class="wrap">
+      <header class="page-head">
+        <span class="kicker">Moderator</span>
+        <h1>Panel question queue</h1>
+        <p>Private list for reading questions to the panelists. Students cannot see this page’s contents.</p>
+      </header>
+
+      <p id="status" class="banner" hidden role="status"></p>
+
+      <section id="login-panel" class="panel">
+        <form id="login-form">
+          <div class="field">
+            <label for="password">Password</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              autocomplete="current-password"
+            />
+          </div>
+          <div class="actions">
+            <button type="submit" id="login-btn">Sign in</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="queue-panel" class="panel" hidden>
+        <div class="mod-bar">
+          <div>
+            <h2>Pending</h2>
+            <p class="live">Updates every few seconds</p>
+          </div>
+          <button type="button" class="secondary" id="logout-btn">Sign out</button>
+        </div>
+
+        <p id="pending-empty" class="empty" hidden>No questions waiting.</p>
+        <div id="pending-list"></div>
+
+        <details class="handled">
+          <summary>Already handled (<span id="handled-count">0</span>)</summary>
+          <p id="handled-empty" class="empty" hidden>Nothing marked asked or dismissed yet.</p>
+          <div id="handled-list"></div>
+        </details>
+      </section>
+    </main>
+    <script src="js/moderator.js"></script>
+  </body>
+</html>
