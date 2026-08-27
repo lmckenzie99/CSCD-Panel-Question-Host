@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -22,7 +23,10 @@ DB_PATH = ROOT / "data" / "panel.sqlite"
 MAX_NAME = 100
 MAX_BODY = 1000
 COOLDOWN_SECONDS = 10
+VOTE_COOLDOWN_SECONDS = 2
 SESSION_COOKIE = "panel_moderator"
+VOTER_COOKIE = "panel_voter"
+TOKEN_RE = re.compile(r"^[a-f0-9]{64}$")
 SESSIONS: set[str] = set()
 
 
@@ -42,6 +46,10 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row["name"] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.execute(
@@ -52,8 +60,35 @@ def init_db() -> None:
               body TEXT NOT NULL,
               status TEXT NOT NULL DEFAULT 'pending'
                 CHECK (status IN ('pending', 'asked', 'dismissed')),
+              visible INTEGER NOT NULL DEFAULT 0,
+              is_current INTEGER NOT NULL DEFAULT 0,
               ip_hash TEXT NOT NULL,
               created_at TEXT NOT NULL
+            )
+            """
+        )
+        cols = table_columns(conn, "questions")
+        if "visible" not in cols:
+            conn.execute("ALTER TABLE questions ADD COLUMN visible INTEGER NOT NULL DEFAULT 0")
+        if "is_current" not in cols:
+            conn.execute("ALTER TABLE questions ADD COLUMN is_current INTEGER NOT NULL DEFAULT 0")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS votes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              question_id INTEGER NOT NULL,
+              voter_token TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              UNIQUE (question_id, voter_token),
+              FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vote_limits (
+              voter_token TEXT PRIMARY KEY,
+              last_vote_at TEXT NOT NULL
             )
             """
         )
@@ -64,13 +99,23 @@ def ip_hash(address: str) -> str:
 
 
 def question_payload(row: sqlite3.Row) -> dict:
-    return {
+    payload = {
         "id": int(row["id"]),
         "name": row["name"],
         "body": row["body"],
         "status": row["status"],
         "created_at": row["created_at"],
     }
+    keys = row.keys()
+    if "visible" in keys:
+        payload["visible"] = int(row["visible"] or 0) == 1
+    if "is_current" in keys:
+        payload["is_current"] = int(row["is_current"] or 0) == 1
+    if "vote_count" in keys:
+        payload["vote_count"] = int(row["vote_count"] or 0)
+    if "voted" in keys:
+        payload["voted"] = int(row["voted"] or 0) == 1
+    return payload
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -106,16 +151,18 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def session_token(self) -> str | None:
-        raw = self.headers.get("Cookie")
-        if not raw:
-            return None
+    def cookie_jar(self) -> cookies.SimpleCookie:
         jar = cookies.SimpleCookie()
-        try:
-            jar.load(raw)
-        except cookies.CookieError:
-            return None
-        morsel = jar.get(SESSION_COOKIE)
+        raw = self.headers.get("Cookie")
+        if raw:
+            try:
+                jar.load(raw)
+            except cookies.CookieError:
+                pass
+        return jar
+
+    def session_token(self) -> str | None:
+        morsel = self.cookie_jar().get(SESSION_COOKIE)
         if not morsel:
             return None
         token = morsel.value
@@ -126,6 +173,25 @@ class Handler(SimpleHTTPRequestHandler):
             return True
         self.send_json({"error": "Unauthorized."}, 401)
         return False
+
+    def voter_token(self) -> tuple[str, bool]:
+        morsel = self.cookie_jar().get(VOTER_COOKIE)
+        if morsel and TOKEN_RE.match(morsel.value):
+            return morsel.value, False
+        header = self.headers.get("X-Voter-Token") or ""
+        if TOKEN_RE.match(header):
+            return header, True
+        return secrets.token_hex(32), True
+
+    def voter_headers(self, token: str, set_cookie: bool) -> list | None:
+        if not set_cookie:
+            return None
+        return [
+            (
+                "Set-Cookie",
+                "%s=%s; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax" % (VOTER_COOKIE, token),
+            )
+        ]
 
     def do_GET(self) -> None:
         if self.handle_api("GET"):
@@ -152,6 +218,9 @@ class Handler(SimpleHTTPRequestHandler):
             "/api/logout.php": ("POST", self.api_logout),
             "/api/questions.php": ("GET", self.api_questions),
             "/api/status.php": ("POST", self.api_status),
+            "/api/wall.php": ("GET", self.api_wall),
+            "/api/vote.php": ("POST", self.api_vote),
+            "/api/current.php": ("GET", self.api_current),
         }
         if path not in routes:
             if path.startswith("/api/"):
@@ -204,7 +273,7 @@ class Handler(SimpleHTTPRequestHandler):
                     )
                     return
             cur = conn.execute(
-                "INSERT INTO questions (name, body, status, ip_hash, created_at) VALUES (?, ?, 'pending', ?, ?)",
+                "INSERT INTO questions (name, body, status, visible, is_current, ip_hash, created_at) VALUES (?, ?, 'pending', 0, 0, ?, ?)",
                 (name, body, hashed, now_sql()),
             )
             conn.commit()
@@ -240,11 +309,12 @@ class Handler(SimpleHTTPRequestHandler):
         with connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, name, body, status, created_at
-                FROM questions
-                ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END ASC,
-                         CASE status WHEN 'pending' THEN created_at END ASC,
-                         created_at DESC
+                SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
+                       (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count
+                FROM questions q
+                ORDER BY CASE q.status WHEN 'pending' THEN 0 ELSE 1 END ASC,
+                         CASE q.status WHEN 'pending' THEN q.created_at END ASC,
+                         q.created_at DESC
                 """
             ).fetchall()
         for row in rows:
@@ -263,16 +333,69 @@ class Handler(SimpleHTTPRequestHandler):
             question_id = int(data.get("id") or 0)
         except (TypeError, ValueError):
             question_id = 0
-        status = str(data.get("status") or "")
         if question_id < 1:
             self.send_json({"error": "Question id is required."}, 400)
             return
+
+        if "visible" in data:
+            visible = 1 if data.get("visible") else 0
+            with connect() as conn:
+                if visible:
+                    cur = conn.execute(
+                        "UPDATE questions SET visible = 1 WHERE id = ? AND status = 'pending'",
+                        (question_id,),
+                    )
+                else:
+                    cur = conn.execute(
+                        "UPDATE questions SET visible = 0, is_current = 0 WHERE id = ? AND status = 'pending'",
+                        (question_id,),
+                    )
+                conn.commit()
+                updated = cur.rowcount
+            if updated < 1:
+                self.send_json({"error": "Question not found or already handled."}, 404)
+                return
+            self.send_json({"ok": True})
+            return
+
+        if "current" in data:
+            with connect() as conn:
+                if data.get("current"):
+                    conn.execute("UPDATE questions SET is_current = 0")
+                    cur = conn.execute(
+                        "UPDATE questions SET is_current = 1, visible = 1 WHERE id = ? AND status = 'pending'",
+                        (question_id,),
+                    )
+                    conn.commit()
+                    if cur.rowcount < 1:
+                        self.send_json({"error": "Question not found or already handled."}, 404)
+                        return
+                else:
+                    conn.execute("UPDATE questions SET is_current = 0 WHERE id = ?", (question_id,))
+                    conn.commit()
+            self.send_json({"ok": True})
+            return
+
+        status = str(data.get("status") or "")
+        if status == "pending":
+            with connect() as conn:
+                cur = conn.execute(
+                    "UPDATE questions SET status = 'pending', visible = 0, is_current = 0 WHERE id = ? AND status IN ('asked', 'dismissed')",
+                    (question_id,),
+                )
+                conn.commit()
+                updated = cur.rowcount
+            if updated < 1:
+                self.send_json({"error": "Question not found or is already pending."}, 404)
+                return
+            self.send_json({"ok": True})
+            return
         if status not in ("asked", "dismissed"):
-            self.send_json({"error": "Status must be asked or dismissed."}, 400)
+            self.send_json({"error": "Provide status, visible, or current."}, 400)
             return
         with connect() as conn:
             cur = conn.execute(
-                "UPDATE questions SET status = ? WHERE id = ? AND status = 'pending'",
+                "UPDATE questions SET status = ?, visible = 0, is_current = 0 WHERE id = ? AND status = 'pending'",
                 (status, question_id),
             )
             conn.commit()
@@ -281,6 +404,113 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json({"error": "Question not found or already handled."}, 404)
             return
         self.send_json({"ok": True})
+
+    def api_wall(self) -> None:
+        token, set_cookie = self.voter_token()
+        with connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
+                       (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count,
+                       EXISTS(
+                         SELECT 1 FROM votes v2
+                         WHERE v2.question_id = q.id AND v2.voter_token = ?
+                       ) AS voted
+                FROM questions q
+                WHERE q.visible = 1 AND q.status = 'pending'
+                ORDER BY vote_count DESC, q.created_at ASC
+                """,
+                (token,),
+            ).fetchall()
+        questions = [question_payload(row) for row in rows]
+        self.send_json(
+            {"questions": questions},
+            extra_headers=self.voter_headers(token, set_cookie),
+        )
+
+    def api_vote(self) -> None:
+        data = self.json_body()
+        try:
+            question_id = int(data.get("id") or 0)
+        except (TypeError, ValueError):
+            question_id = 0
+        if question_id < 1:
+            self.send_json({"error": "Question id is required."}, 400)
+            return
+
+        token, set_cookie = self.voter_token()
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM questions WHERE id = ? AND visible = 1 AND status = 'pending'",
+                (question_id,),
+            ).fetchone()
+            if not row:
+                self.send_json({"error": "Question is not on the wall."}, 404)
+                return
+
+            limit = conn.execute(
+                "SELECT last_vote_at FROM vote_limits WHERE voter_token = ?",
+                (token,),
+            ).fetchone()
+            if limit:
+                try:
+                    last = datetime.strptime(limit["last_vote_at"], "%Y-%m-%d %H:%M:%S")
+                    elapsed = (datetime.now() - last).total_seconds()
+                except ValueError:
+                    elapsed = VOTE_COOLDOWN_SECONDS
+                if 0 <= elapsed < VOTE_COOLDOWN_SECONDS:
+                    self.send_json(
+                        {
+                            "error": "Please wait a moment before voting again.",
+                            "retry_after": int(VOTE_COOLDOWN_SECONDS - elapsed),
+                        },
+                        429,
+                    )
+                    return
+
+            conn.execute(
+                """
+                INSERT INTO vote_limits (voter_token, last_vote_at) VALUES (?, ?)
+                ON CONFLICT(voter_token) DO UPDATE SET last_vote_at = excluded.last_vote_at
+                """,
+                (token, now_sql()),
+            )
+            existing = conn.execute(
+                "SELECT id FROM votes WHERE question_id = ? AND voter_token = ?",
+                (question_id, token),
+            ).fetchone()
+            if existing:
+                conn.execute("DELETE FROM votes WHERE id = ?", (existing["id"],))
+                voted = False
+            else:
+                conn.execute(
+                    "INSERT INTO votes (question_id, voter_token, created_at) VALUES (?, ?, ?)",
+                    (question_id, token, now_sql()),
+                )
+                voted = True
+            count = conn.execute(
+                "SELECT COUNT(*) AS n FROM votes WHERE question_id = ?",
+                (question_id,),
+            ).fetchone()
+            conn.commit()
+            n = int(count["n"]) if count else 0
+        self.send_json(
+            {"ok": True, "voted": voted, "vote_count": n},
+            extra_headers=self.voter_headers(token, set_cookie),
+        )
+
+    def api_current(self) -> None:
+        with connect() as conn:
+            row = conn.execute(
+                """
+                SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
+                       (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count
+                FROM questions q
+                WHERE q.is_current = 1 AND q.status = 'pending'
+                LIMIT 1
+                """
+            ).fetchone()
+        self.send_json({"question": question_payload(row) if row else None})
 
 
 def lan_urls(port: int) -> list[str]:
@@ -314,6 +544,8 @@ def main() -> None:
     print("Override with MODERATOR_PASSWORD=... if you want.", flush=True)
     for url in lan_urls(args.port):
         print("Students:  %s" % url, flush=True)
+        print("Wall:      %swall.html" % url, flush=True)
+        print("Display:   %sdisplay.html" % url, flush=True)
         print("Moderator: %smoderator.html" % url, flush=True)
     print("Ctrl+C to stop.", flush=True)
     try:

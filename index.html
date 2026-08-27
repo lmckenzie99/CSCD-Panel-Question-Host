@@ -12,8 +12,8 @@
         <span class="kicker">Live panel</span>
         <h1>Ask the panel a question</h1>
         <p>
-          Your question goes to the moderator, who will read selected questions
-          aloud. Name is optional.
+          Your question goes to the moderator first. If they share it with the
+          room, it appears in the list below so people can vote.
         </p>
       </header>
 
@@ -45,7 +45,16 @@
           <button type="submit" id="submit-btn">Send question</button>
         </div>
       </form>
+
+      <section class="section-head" aria-labelledby="wall-heading">
+        <h2 id="wall-heading">Open questions</h2>
+        <p class="hint">Vote on a question to bump it for the moderator. Submissions stay private until they are shared.</p>
+      </section>
+      <p id="wall-status" class="banner" hidden role="status"></p>
+      <p id="wall-empty" class="empty">Waiting for the moderator to share questions.</p>
+      <div id="wall-list" class="wall-list"></div>
     </main>
     <script src="js/submit.js"></script>
+    <script src="js/wall.js"></script>
   </body>
 </html>

@@ -125,11 +125,83 @@ function app_strlen($value)
 
 function question_payload($row)
 {
-    return array(
+    $payload = array(
         'id' => (int) $row['id'],
         'name' => $row['name'],
         'body' => $row['body'],
         'status' => $row['status'],
         'created_at' => $row['created_at'],
     );
+
+    if (array_key_exists('visible', $row)) {
+        $payload['visible'] = (int) $row['visible'] === 1;
+    }
+    if (array_key_exists('is_current', $row)) {
+        $payload['is_current'] = (int) $row['is_current'] === 1;
+    }
+    if (array_key_exists('vote_count', $row)) {
+        $payload['vote_count'] = (int) $row['vote_count'];
+    }
+    if (array_key_exists('voted', $row)) {
+        $payload['voted'] = (int) $row['voted'] === 1;
+    }
+
+    return $payload;
+}
+
+function voter_token()
+{
+    $fromCookie = isset($_COOKIE['panel_voter']) ? $_COOKIE['panel_voter'] : '';
+    if (preg_match('/^[a-f0-9]{64}$/', $fromCookie)) {
+        return $fromCookie;
+    }
+
+    $fromHeader = isset($_SERVER['HTTP_X_VOTER_TOKEN']) ? $_SERVER['HTTP_X_VOTER_TOKEN'] : '';
+    if (preg_match('/^[a-f0-9]{64}$/', $fromHeader)) {
+        set_voter_cookie($fromHeader);
+        return $fromHeader;
+    }
+
+    $token = bin2hex(random_bytes(32));
+    set_voter_cookie($token);
+    return $token;
+}
+
+function set_voter_cookie($token)
+{
+    $secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    setcookie('panel_voter', $token, array(
+        'expires' => time() + 86400 * 30,
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ));
+    $_COOKIE['panel_voter'] = $token;
+}
+
+function enforce_vote_cooldown($pdo, $token, $seconds = 2)
+{
+    $stmt = $pdo->prepare('SELECT last_vote_at FROM vote_limits WHERE voter_token = :token');
+    $stmt->execute(array('token' => $token));
+    $row = $stmt->fetch();
+    if ($row) {
+        $elapsed = time() - strtotime($row['last_vote_at']);
+        if ($elapsed >= 0 && $elapsed < $seconds) {
+            json_response(
+                array(
+                    'error' => 'Please wait a moment before voting again.',
+                    'retry_after' => $seconds - $elapsed,
+                ),
+                429
+            );
+        }
+    }
+
+    $upsert = $pdo->prepare(
+        'INSERT INTO vote_limits (voter_token, last_vote_at)
+         VALUES (:token, NOW())
+         ON DUPLICATE KEY UPDATE last_vote_at = NOW()'
+    );
+    $upsert->execute(array('token' => $token));
 }
