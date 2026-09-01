@@ -9,11 +9,9 @@ $pdo = db();
 
 $stmt = $pdo->prepare(
     "SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
-            (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count,
-            EXISTS(
-              SELECT 1 FROM votes v2
-              WHERE v2.question_id = q.id AND v2.voter_token = :token
-            ) AS voted
+            (SELECT COALESCE(SUM(v.value), 0) FROM votes v WHERE v.question_id = q.id) AS vote_count,
+            (SELECT COALESCE(SUM(v2.value), 0) FROM votes v2
+              WHERE v2.question_id = q.id AND v2.voter_token = :token) AS my_vote
      FROM questions q
      WHERE q.visible = 1 AND q.status = 'pending'
      ORDER BY vote_count DESC, q.created_at ASC"

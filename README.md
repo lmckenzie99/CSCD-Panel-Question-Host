@@ -8,8 +8,8 @@ Live Q&A for a panel: students submit questions; a moderator decides what the ro
 
 | URL | Who |
 |---|---|
-| `/` or `index.html` | Students — submit, then vote on shared questions in the list below the form |
-| `/wall.html` | Audience — the same voted list without the submit form |
+| `/` or `index.html` | Students — submit, then thumbs up/down shared questions in the list below the form |
+| `/wall.html` | Audience — the same ranked list without the submit form |
 | `/display.html` | Projector / panelists — current “now reading” question |
 | `/moderator.html` | Moderator — private queue, share to wall, now reading, asked/dismiss |
 
@@ -38,7 +38,7 @@ Stop with Ctrl+C.
 ## Moderator flow
 
 1. Students submit on `index.html` (stays private).
-2. On `moderator.html`, **Show on wall** puts a question on the public list. People vote on that row.
+2. On `moderator.html`, **Show on wall** puts a question on the public list. People thumbs up or down that row, and the list stays sorted by net score (up minus down). Each person gets one vote per question: tapping the same arrow again clears it, and the other arrow switches sides.
 3. **Now reading** sends it to `display.html` (and onto the wall if it was not there yet).
 4. **Asked** or **Dismiss** clears it from the wall and the display. **Undo** in Already handled puts it back in the pending queue.
 

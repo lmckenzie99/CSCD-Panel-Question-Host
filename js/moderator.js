@@ -52,9 +52,8 @@
     var votes = Number(question.vote_count || 0);
     var badges =
       '<div class="badge-row">' +
-      '<span class="vote-count">' +
+      '<span class="vote-count">score ' +
       votes +
-      (votes === 1 ? " vote" : " votes") +
       "</span>" +
       (question.visible ? '<span class="pill on">On wall</span>' : "") +
       (question.is_current ? '<span class="pill live">Now reading</span>' : "") +

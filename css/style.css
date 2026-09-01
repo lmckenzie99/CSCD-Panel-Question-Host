@@ -276,13 +276,25 @@ button.secondary:hover {
 }
 
 .vote-box button {
-  padding: 0.35rem 0.5rem;
-  min-width: 3.1rem;
-  font-size: 0.85rem;
+  padding: 0.2rem 0.5rem;
+  min-width: 2.6rem;
+  font-size: 0.95rem;
+  line-height: 1.1;
 }
 
-.vote-box button[aria-pressed="true"] {
+.vote-box .count {
+  margin: 0.15rem 0;
+}
+
+.vote-box button[data-vote="1"][aria-pressed="true"] {
   background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+
+.vote-box button[data-vote="-1"][aria-pressed="true"] {
+  background: var(--danger);
+  border-color: var(--danger);
   color: #fff;
 }
 

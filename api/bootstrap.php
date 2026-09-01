@@ -142,8 +142,8 @@ function question_payload($row)
     if (array_key_exists('vote_count', $row)) {
         $payload['vote_count'] = (int) $row['vote_count'];
     }
-    if (array_key_exists('voted', $row)) {
-        $payload['voted'] = (int) $row['voted'] === 1;
+    if (array_key_exists('my_vote', $row)) {
+        $payload['my_vote'] = (int) $row['my_vote'];
     }
 
     return $payload;

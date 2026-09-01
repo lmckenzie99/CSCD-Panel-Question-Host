@@ -81,21 +81,24 @@
   }
 
   function renderQuestion(question) {
-    var voted = !!question.voted;
+    var myVote = Number(question.my_vote || 0);
+    var votedUp = myVote === 1;
+    var votedDown = myVote === -1;
     var current = question.is_current ? '<span class="pill live">Now reading</span>' : "";
     return (
       '<article class="question q-row" data-id="' +
       question.id +
       '">' +
       '<div class="vote-box">' +
+      '<button type="button" class="secondary vote-btn" data-vote="1" aria-label="Thumbs up" aria-pressed="' +
+      (votedUp ? "true" : "false") +
+      '">&#9650;</button>' +
       '<span class="count">' +
-      escapeHtml(question.vote_count || 0) +
+      escapeHtml(Number(question.vote_count || 0)) +
       "</span>" +
-      '<button type="button" class="secondary" data-vote="1" aria-pressed="' +
-      (voted ? "true" : "false") +
-      '">' +
-      (voted ? "Voted" : "Vote") +
-      "</button>" +
+      '<button type="button" class="secondary vote-btn" data-vote="-1" aria-label="Thumbs down" aria-pressed="' +
+      (votedDown ? "true" : "false") +
+      '">&#9660;</button>' +
       "</div>" +
       "<div>" +
       "<header><span class=\"who\">" +
@@ -140,7 +143,10 @@
       method: "POST",
       credentials: "same-origin",
       headers: headers(),
-      body: JSON.stringify({ id: Number(article.getAttribute("data-id")) }),
+      body: JSON.stringify({
+        id: Number(article.getAttribute("data-id")),
+        value: Number(button.getAttribute("data-vote")),
+      }),
     })
       .then(parseJson)
       .then(function (result) {

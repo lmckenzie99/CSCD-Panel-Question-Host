@@ -78,12 +78,15 @@ def init_db() -> None:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               question_id INTEGER NOT NULL,
               voter_token TEXT NOT NULL,
+              value INTEGER NOT NULL DEFAULT 1,
               created_at TEXT NOT NULL,
               UNIQUE (question_id, voter_token),
               FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
             )
             """
         )
+        if "value" not in table_columns(conn, "votes"):
+            conn.execute("ALTER TABLE votes ADD COLUMN value INTEGER NOT NULL DEFAULT 1")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS vote_limits (
@@ -113,8 +116,8 @@ def question_payload(row: sqlite3.Row) -> dict:
         payload["is_current"] = int(row["is_current"] or 0) == 1
     if "vote_count" in keys:
         payload["vote_count"] = int(row["vote_count"] or 0)
-    if "voted" in keys:
-        payload["voted"] = int(row["voted"] or 0) == 1
+    if "my_vote" in keys:
+        payload["my_vote"] = int(row["my_vote"] or 0)
     return payload
 
 
@@ -310,7 +313,7 @@ class Handler(SimpleHTTPRequestHandler):
             rows = conn.execute(
                 """
                 SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
-                       (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count
+                       (SELECT COALESCE(SUM(v.value), 0) FROM votes v WHERE v.question_id = q.id) AS vote_count
                 FROM questions q
                 ORDER BY CASE q.status WHEN 'pending' THEN 0 ELSE 1 END ASC,
                          CASE q.status WHEN 'pending' THEN q.created_at END ASC,
@@ -411,11 +414,9 @@ class Handler(SimpleHTTPRequestHandler):
             rows = conn.execute(
                 """
                 SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
-                       (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count,
-                       EXISTS(
-                         SELECT 1 FROM votes v2
-                         WHERE v2.question_id = q.id AND v2.voter_token = ?
-                       ) AS voted
+                       (SELECT COALESCE(SUM(v.value), 0) FROM votes v WHERE v.question_id = q.id) AS vote_count,
+                       (SELECT COALESCE(SUM(v2.value), 0) FROM votes v2
+                         WHERE v2.question_id = q.id AND v2.voter_token = ?) AS my_vote
                 FROM questions q
                 WHERE q.visible = 1 AND q.status = 'pending'
                 ORDER BY vote_count DESC, q.created_at ASC
@@ -436,6 +437,14 @@ class Handler(SimpleHTTPRequestHandler):
             question_id = 0
         if question_id < 1:
             self.send_json({"error": "Question id is required."}, 400)
+            return
+
+        try:
+            value = int(data.get("value", 1))
+        except (TypeError, ValueError):
+            value = 0
+        if value not in (1, -1):
+            self.send_json({"error": "Vote value must be 1 or -1."}, 400)
             return
 
         token, set_cookie = self.voter_token()
@@ -476,26 +485,32 @@ class Handler(SimpleHTTPRequestHandler):
                 (token, now_sql()),
             )
             existing = conn.execute(
-                "SELECT id FROM votes WHERE question_id = ? AND voter_token = ?",
+                "SELECT id, value FROM votes WHERE question_id = ? AND voter_token = ?",
                 (question_id, token),
             ).fetchone()
-            if existing:
+            my_vote = 0
+            if existing is None:
+                conn.execute(
+                    "INSERT INTO votes (question_id, voter_token, value, created_at) VALUES (?, ?, ?, ?)",
+                    (question_id, token, value, now_sql()),
+                )
+                my_vote = value
+            elif int(existing["value"]) == value:
                 conn.execute("DELETE FROM votes WHERE id = ?", (existing["id"],))
-                voted = False
             else:
                 conn.execute(
-                    "INSERT INTO votes (question_id, voter_token, created_at) VALUES (?, ?, ?)",
-                    (question_id, token, now_sql()),
+                    "UPDATE votes SET value = ? WHERE id = ?",
+                    (value, existing["id"]),
                 )
-                voted = True
+                my_vote = value
             count = conn.execute(
-                "SELECT COUNT(*) AS n FROM votes WHERE question_id = ?",
+                "SELECT COALESCE(SUM(value), 0) AS n FROM votes WHERE question_id = ?",
                 (question_id,),
             ).fetchone()
             conn.commit()
             n = int(count["n"]) if count else 0
         self.send_json(
-            {"ok": True, "voted": voted, "vote_count": n},
+            {"ok": True, "my_vote": my_vote, "vote_count": n},
             extra_headers=self.voter_headers(token, set_cookie),
         )
 
@@ -504,7 +519,7 @@ class Handler(SimpleHTTPRequestHandler):
             row = conn.execute(
                 """
                 SELECT q.id, q.name, q.body, q.status, q.created_at, q.visible, q.is_current,
-                       (SELECT COUNT(*) FROM votes v WHERE v.question_id = q.id) AS vote_count
+                       (SELECT COALESCE(SUM(v.value), 0) FROM votes v WHERE v.question_id = q.id) AS vote_count
                 FROM questions q
                 WHERE q.is_current = 1 AND q.status = 'pending'
                 LIMIT 1

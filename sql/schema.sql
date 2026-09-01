@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS votes (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   question_id INT UNSIGNED NOT NULL,
   voter_token CHAR(64) NOT NULL,
+  value TINYINT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uniq_vote (question_id, voter_token),
