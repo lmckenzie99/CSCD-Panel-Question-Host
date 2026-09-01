@@ -49,6 +49,51 @@
   }
 
   function renderPending(question) {
+    var votes = Number(question.vote_count || 0);
+    var badges =
+      '<div class="badge-row">' +
+      '<span class="vote-count">score ' +
+      votes +
+      "</span>" +
+      (question.visible ? '<span class="pill on">On wall</span>' : "") +
+      (question.is_current ? '<span class="pill live">Now reading</span>' : "") +
+      "</div>";
+    var wallLabel = question.visible ? "Hide from wall" : "Show on wall";
+    var wallValue = question.visible ? "0" : "1";
+    var currentLabel = question.is_current ? "Clear reading" : "Now reading";
+    var currentValue = question.is_current ? "0" : "1";
+
+    return (
+      '<article class="question" data-id="' +
+      question.id +
+      '">' +
+      "<header><span class=\"who\">" +
+      escapeHtml(displayName(question)) +
+      "</span><time>" +
+      escapeHtml(formatTime(question.created_at)) +
+      "</time></header>" +
+      badges +
+      '<p class="body">' +
+      escapeHtml(question.body) +
+      "</p>" +
+      '<div class="actions">' +
+      '<button type="button" data-status="asked">Asked</button>' +
+      '<button type="button" class="secondary" data-status="dismissed">Dismiss</button>' +
+      '<button type="button" class="secondary" data-visible="' +
+      wallValue +
+      '">' +
+      wallLabel +
+      "</button>" +
+      '<button type="button" class="secondary" data-current="' +
+      currentValue +
+      '">' +
+      currentLabel +
+      "</button>" +
+      "</div></article>"
+    );
+  }
+
+  function renderHandled(question) {
     return (
       '<article class="question" data-id="' +
       question.id +
@@ -61,27 +106,12 @@
       '<p class="body">' +
       escapeHtml(question.body) +
       "</p>" +
-      '<div class="actions">' +
-      '<button type="button" data-status="asked">Asked</button>' +
-      '<button type="button" class="secondary" data-status="dismissed">Dismiss</button>' +
-      "</div></article>"
-    );
-  }
-
-  function renderHandled(question) {
-    return (
-      '<article class="question">' +
-      "<header><span class=\"who\">" +
-      escapeHtml(displayName(question)) +
-      "</span><time>" +
-      escapeHtml(formatTime(question.created_at)) +
-      "</time></header>" +
-      '<p class="body">' +
-      escapeHtml(question.body) +
-      "</p>" +
       '<p class="badge">' +
       escapeHtml(question.status) +
-      "</p></article>"
+      "</p>" +
+      '<div class="actions">' +
+      '<button type="button" class="secondary" data-status="pending">Undo</button>' +
+      "</div></article>"
     );
   }
 
@@ -147,12 +177,12 @@
       });
   }
 
-  function setStatus(id, status) {
+  function postAction(payload) {
     fetch("api/status.php", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: id, status: status }),
+      body: JSON.stringify(payload),
     })
       .then(parseJson)
       .then(function (result) {
@@ -172,8 +202,11 @@
       });
   }
 
-  pendingList.addEventListener("click", function (event) {
-    var button = event.target.closest("button[data-status]");
+  pendingList.addEventListener("click", onQuestionAction);
+  handledList.addEventListener("click", onQuestionAction);
+
+  function onQuestionAction(event) {
+    var button = event.target.closest(".question button");
     if (!button) {
       return;
     }
@@ -181,8 +214,18 @@
     if (!article) {
       return;
     }
-    setStatus(Number(article.getAttribute("data-id")), button.getAttribute("data-status"));
-  });
+    var payload = { id: Number(article.getAttribute("data-id")) };
+    if (button.hasAttribute("data-status")) {
+      payload.status = button.getAttribute("data-status");
+    } else if (button.hasAttribute("data-visible")) {
+      payload.visible = button.getAttribute("data-visible") === "1";
+    } else if (button.hasAttribute("data-current")) {
+      payload.current = button.getAttribute("data-current") === "1";
+    } else {
+      return;
+    }
+    postAction(payload);
+  }
 
   loginForm.addEventListener("submit", function (event) {
     event.preventDefault();

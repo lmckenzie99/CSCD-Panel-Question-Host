@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Question wall — CSCD Panel</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="page-head">
+        <span class="kicker">Live panel</span>
+        <h1>Question wall</h1>
+        <p>Thumbs up or down a question to help the moderator choose what to ask next. Highest score first.</p>
+      </header>
+
+      <p id="wall-status" class="banner" hidden role="status"></p>
+      <p id="wall-empty" class="empty">Waiting for the moderator to share questions.</p>
+      <div id="wall-list" class="wall-list"></div>
+      <p class="ask-link"><a href="index.html">Ask a question</a></p>
+    </main>
+    <script src="js/wall.js"></script>
+  </body>
+</html>

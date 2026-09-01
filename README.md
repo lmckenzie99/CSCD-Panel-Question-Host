@@ -1,15 +1,17 @@
 # CSCD Panel Question Host
 
-Live Q&A for a panel: students submit questions; a moderator reads them privately to the panelists.
+Live Q&A for a panel: students submit questions; a moderator decides what the room sees and what is read aloud.
 
-There is no public question list. Students only see the submit form.
+**This `wall-votes` branch** adds a public question list with per-item voting and a panelist display. Submitting still does not publish — the moderator has to share a question onto the wall.
 
 ## Pages
 
 | URL | Who |
 |---|---|
-| `/` or `index.html` | Students — submit a question (name optional) |
-| `/moderator.html` | Moderator — password-protected queue |
+| `/` or `index.html` | Students — submit, then thumbs up/down shared questions in the list below the form |
+| `/wall.html` | Audience — the same ranked list without the submit form |
+| `/display.html` | Projector / panelists — current “now reading” question |
+| `/moderator.html` | Moderator — private queue, share to wall, now reading, asked/dismiss |
 
 ## Run locally (no cPanel)
 
@@ -19,7 +21,7 @@ You do not need MySQL or PHP for this. From the repo root:
 python3 serve.py
 ```
 
-Then open the student URL and `moderator.html` printed in the terminal.
+Then open the URLs printed in the terminal.
 
 - Default moderator password: `moderator`
 - Questions are stored in `data/panel.sqlite` (gitignored)
@@ -33,13 +35,23 @@ MODERATOR_PASSWORD='your-password' python3 serve.py
 
 Stop with Ctrl+C.
 
+## Moderator flow
+
+1. Students submit on `index.html` (stays private).
+2. On `moderator.html`, **Show on wall** puts a question on the public list. People thumbs up or down that row, and the list stays sorted by net score (up minus down). Each person gets one vote per question: tapping the same arrow again clears it, and the other arrow switches sides.
+3. **Now reading** sends it to `display.html` (and onto the wall if it was not there yet).
+4. **Asked** or **Dismiss** clears it from the wall and the display. **Undo** in Already handled puts it back in the pending queue.
+
 ## Later: cPanel (PHP + MySQL)
 
 When the cPanel database is ready, deploy the same HTML/JS and the `api/` PHP files. `serve.py` is only for local use.
 
 ### 1. MySQL
 
-In cPanel, create a database and a user, and grant the user all privileges on that database. Import [`sql/schema.sql`](sql/schema.sql) with phpMyAdmin (Import) or the MySQL command line.
+In cPanel, create a database and a user, and grant the user all privileges on that database.
+
+- New database: import [`sql/schema.sql`](sql/schema.sql)
+- Existing v1 database: import [`sql/migrate_wall.sql`](sql/migrate_wall.sql)
 
 ### 2. App config
 
@@ -70,9 +82,3 @@ Pull this repository into the site document root the same way as your DBS class 
 After the first pull, create `api/config.php` on the server so later pulls do not overwrite credentials (the file is gitignored).
 
 Students and the moderator should use `https://`.
-
-## Moderator flow
-
-Sign in on `moderator.html`. Pending questions appear oldest first and refresh about every two seconds. **Asked** and **Dismiss** move a question out of the live queue into **Already handled**.
-
-A public question wall, voting, and a panelist-facing display are not in this version.
