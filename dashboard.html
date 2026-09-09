@@ -4,7 +4,40 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Event day — CSCD Panel</title>
-    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/style.css?v=2" />
+    <style>
+      /* Keep nav buttons self-contained so a stale cached style.css still works on cPanel. */
+      .dash-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .dash-nav a {
+        display: block;
+        text-decoration: none;
+        background: var(--navy, #1f3d5c);
+        color: #fff;
+        border-radius: 6px;
+        padding: 0.85rem 1.15rem;
+      }
+      .dash-nav a:hover {
+        background: var(--navy-hover, #163049);
+      }
+      .dash-nav a:focus-visible {
+        outline: 2px solid var(--navy, #1f3d5c);
+        outline-offset: 2px;
+      }
+      .dash-nav .dash-label {
+        display: block;
+        font-weight: 650;
+      }
+      .dash-nav .dash-role {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 0.9rem;
+        opacity: 0.85;
+      }
+    </style>
   </head>
   <body>
     <main class="wrap">
