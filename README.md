@@ -8,6 +8,7 @@ Live Q&A for a panel: students submit questions; a moderator decides what the ro
 
 | URL | Who |
 |---|---|
+| `/dashboard.html` | Event-day hub — links to every section for setup and navigation |
 | `/` or `index.html` | Students — submit, then thumbs up/down shared questions in the list below the form |
 | `/wall.html` | Audience — the same ranked list without the submit form |
 | `/display.html` | Projector / panelists — current “now reading” question |

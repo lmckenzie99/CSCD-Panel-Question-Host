@@ -558,6 +558,7 @@ def main() -> None:
     print("Moderator password: %s" % password, flush=True)
     print("Override with MODERATOR_PASSWORD=... if you want.", flush=True)
     for url in lan_urls(args.port):
+        print("Dashboard: %sdashboard.html" % url, flush=True)
         print("Students:  %s" % url, flush=True)
         print("Wall:      %swall.html" % url, flush=True)
         print("Display:   %sdisplay.html" % url, flush=True)
